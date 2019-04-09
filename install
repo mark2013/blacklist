@@ -1,0 +1,5 @@
+#!/bin/bash
+
+INSTALLDIR="/usr/bin"
+cp -v blacklist $INSTALLDIR/blacklist
+cp -v logrotate/blacklist /etc/logrotate.d/blacklist

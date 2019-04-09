@@ -1,0 +1,396 @@
+#!/bin/bash
+
+#A script which blacklists an IP or unblocks an IP
+#Parameters:
+#
+#-i <string>
+#-a <list|delist>
+#-d <number>
+
+basename=`basename $0`
+NO_ARGS=0
+DIR="/var/log/blacklist"
+BLOCKED_LOG="$DIR/block.log"
+UNBLOCKED_LOG="$DIR/unblocked.log"
+PROBLEM_LOG="$DIR/problem.log"
+
+log()
+{
+
+	if [ ! -d "$DIR" ]
+	then
+		mkdir $DIR
+	fi
+	case "$2" in
+	"list") date=`date +"%d.%m.%Y %T.%N"`
+		 echo "[ $date ]: IP <$1> has been blocked" >> $BLOCKED_LOG
+		;;
+
+	"delist") date=`date +"%d.%m.%Y %T.%N"`
+		 echo "[ $date ]: IP <$1> has been unblocked" >> $UNBLOCKED_LOG
+		;;
+
+	"block") date=`date +"%d.%m.%Y %T.%N"`
+		echo " [ $date ]: Mass blocking from file $3: The IP <$1> has been blocked" >> $BLOCKED_LOG
+		;;
+
+	"unblock") date=`date +"%d.%m.%Y %T.%N"`
+		echo " [ $date ]: Mass unblocking from file $3: The IP <$1> has been unblocked" >> $UNBLOCKED_LOG
+		;;
+	"problem") date=`date +"%d.%m.%Y %T.%N"`
+		echo "[ $date ]: There was a problem while performing an operation on the IP $1" >> $PROBLEM_LOG
+		;;
+
+	*) usage
+	    ;;
+	esac
+	
+}
+
+
+    
+help()
+{
+    echo "This script helps to block IP addresses. You can work both with IPv4 and IPv6. These IPs you can block and unblock. When necessary, use the blocking feature from file"
+    echo "Usage:"
+    echo "";
+    echo "-i | --ip-address IP address which is to be blocked or unblocked"
+    echo "-a | --action action, which is to be taken (list, delist, block, unblock). List/delist is for single IPs whereas block/unblock is for file operations"
+    echo "-f | --block-from-file full path to the file name which contains IPs to block"
+    echo "-c | --count just count IPs that were already blocked"
+    echo "-v | --version Echoes the version of this script"
+    echo "-h | --help Prints this help message"
+    exit 1
+}
+    
+valid_ip_v4()
+{
+        local  ip=$1
+        local  stat=1
+        
+            if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\/{,1}[0-9]{,2}$ ]]; then
+                OIFS=$IFS
+                IFS='.'
+                ip=($ip)
+                IFS=$OIFS
+                [[ ${ip[0]} -le 255 && ${ip[1]} -le 255 && ${ip[2]} -le 255 && ${ip[3]} -le 255 ]]
+                stat=$?
+            fi
+            return $stat
+}
+
+
+valid_ip_v6()
+{
+    file="$(mktemp /tmp/IPLogic.XXXXXX)"
+    ipcalc -c "$1" 2>$file
+    
+    size=`du -b $file | awk ' {print $1}'`
+
+    if [[ $size > 0 ]]
+    then
+	echo "0"
+    else
+	echo "1"
+    fi
+    unlink $file
+}
+    
+usage()
+{
+    echo "Usage: $basename [-i <string>] [-a <list|delist>] [-f FILE_NAME]" 1>&2; exit 1;
+}
+
+block_ip_v4()
+{
+    if [ -z "$1" ]
+    then
+        exit 1
+    fi
+    
+    
+    if valid_ip_v4 $1;
+    then
+	stat="good"
+    else
+	stat="bad"
+    fi
+    if [[ $stat = "bad" ]]
+    then
+	echo "This is not a valid IP address. Exiting..."
+	log "$1" "problem"
+	exit 1
+    fi
+    
+    str=`ip route | grep $1 | tr -d "blackhole"`
+    strlength=`echo -n $str | wc -c`
+
+    if [ $str = "$1" 2>/dev/null ]
+    then
+	echo "This IP has been already blocked. No need to block again. Try to unblock instead"
+	exit 1
+    fi
+    ip route add blackhole $1
+
+    str=`ip route | grep "$1" | tr -d "blackhole"`
+    strlength=`echo -n $str | wc -c`
+    if [ $strlength > 0 ] && [ $str = "$1" ];
+    then
+	echo "IP $1 has been successfully blocked"
+	log "$1" "list"
+	exit 0
+    else
+	echo "There was a problem while blocking IP $IP"
+    fi
+}
+
+
+block_ip_v6()
+{
+    if [ -z "$1" ]
+    then
+	exit 1
+    fi
+    if [[ $(valid_ip_v6 $1) = "1" ]]
+    then
+	ip -6 route add blackhole $1
+	str=`ip -6 route | grep "$1" | tr -d "blackhole"`
+	strlength=`echo -n $str | wc -c`
+	if [[ $strlength > 0 ]];
+	then
+	    echo "IP $1 has been successfully blocked"
+	    exit 0
+	else
+	    echo "There was a problem blocking IP $1"
+	fi
+    else
+	echo "IP $1 doen't seem to be a valid IPv6 address"
+    fi
+}
+
+unblock_ip_v4()
+{
+    if [ -z "$1" ]
+    then
+	exit 1
+    fi
+    
+    str=`ip route | grep $1`
+    strlength=`echo -n $str | wc -c`
+    
+    if [ $strlength = 0 ]
+    then
+	echo "IP $1 is not in blackhole. Nothing to delist"
+	exit 0
+    else
+	ip route del blackhole $1
+	str=`ip route | grep $1`
+	strlength=`echo -n $str | wc -c`
+	if [ $strlength = "0" ]
+	then
+	    echo "IP $1 has been successfully delisted from the blackhole"
+	    log $1 delist
+	    exit 0
+	else
+	    echo "There was an error while delisting IP $1"
+	fi
+    fi
+    
+}
+
+
+block_from_file()
+{
+
+    if [ ! -f "$1" ]
+    then
+	echo "File $1 does not exist"
+	exit 1
+    else
+	input="$1"
+	for ip in `cat $input`
+	    do
+		if [[ $ACTION = "block" ]]
+		then
+		    if valid_ip_v4 $ip;
+		    then
+			ip route add blackhole $ip 2>/dev/null
+			str=`ip route | grep $ip | tr -d "blackhole"`
+			strlength=`echo -n $str | wc -c`
+			    if [ "$str"="$ip" ]
+			    then
+				echo "IP $ip has been successfully blocked"
+				log $ip "block" $input
+			    else
+				echo "There was a problem blocking IP $ip"
+				log $ip "problem"
+			    fi
+		    else
+			echo "IP $ip is not a valid IP address. Exiting..."
+		    fi
+		    
+	    elif [[ $ACTION = "unblock" ]]
+	    then
+		if valid_ip_v4 $ip;
+		then
+		    ip route del blackhole "$ip"
+		    str=`ip route | grep $ip | tr -d "blackhole"`
+		    strlength=`echo -n $str | wc -c`
+		    if [[ $strlength = 0 ]]
+		    then
+		        echo "IP $ip has been successfully unblocked"
+			log $ip "unblock" $input
+		    else
+		        echo "There was a problem unblocking IP $ip"
+			log $ip "problem"
+		    fi
+		else
+		    echo "IP $ip doesn't seem to be a valid IP address. No need to unblock"
+		fi
+	    fi
+	done
+    fi
+}
+
+unblock_ip_v6()
+{
+    if [ -z "$1" ]
+    then
+	exit 1
+    fi
+    
+    
+    str=`ip -6 route | grep $1`
+    strlength=`echo -n $str | wc -c`
+    
+    if [ $strlength = "0" ]
+    then
+	echo "IP $1 is not in blackhole. Nothing to delist"
+	exit 0
+    else
+	ip -6 route del blackhole $1
+	str=`ip route | grep $1`
+	strlength=`echo -n $str | wc -c`
+	if [ $strlength = "0" ]
+	then
+	    echo "IP $1 has been successfully delisted from the blackhole"
+	    log $1 "delist"
+	    exit 0
+	else
+	    echo "There was an error while delisting IP $1"
+	    log $1 "problem"
+	fi
+    fi
+}
+    
+count()
+{
+    echo "IPv4 blocked: " `ip route | wc -l`
+    echo "IPv6 blocked: " `ip -6 route | wc -l`
+    return 0
+}
+
+if [ $# = $NO_ARGS ]
+then
+    usage
+fi
+
+
+
+while getopts "i:a:dcf:vh" arg; do
+    case $arg in
+	i)	IP=${OPTARG}
+		;;
+
+	a)	ACTION=${OPTARG}
+		if [[ $ACTION="block" ]] && [[ -z "$file_operation" ]];
+		then
+			echo "Please give me a file name"
+			exit 1
+		else
+			ACTION=${OPTARG}
+		fi
+
+
+		if [[ $ACTION="unblock" ]] && [[ -z "$file_operation" ]];
+		then
+			echo "Please give me a file name"
+			exit 1
+		fi
+		;;
+
+	d)	IPVERSION=${OPTARG}
+	    if [[ $IPVERSION != 4 && $IPVERSION != 6 ]]
+	    then
+		    usage
+	    fi
+	    ;;
+	    
+	c)	count
+	    exit 0
+	    ;;
+
+	f)  file_operation=1
+	    block_from_file ${OPTARG}
+	    exit 0
+	    ;;
+	    
+	v)	echo "IP blocking script; version 0.2"
+	    exit 0
+	    ;;
+	    
+	h)	help
+	    ;;
+	    
+	*)	usage
+	    ;;
+    esac
+done
+
+
+if [[ $ACTION != "list" && $ACTION != "delist" ]]
+then
+	usage
+fi
+
+if [[ -z $IPVERSION ]]
+then
+    IP_VERSION=4
+else
+    IP_VERSION=$IPVERSION
+fi
+
+case $ACTION in
+    list)
+	if [[ $IP_VERSION = 4 ]]
+	then
+	    block_ip_v4 $IP
+	    exit 0
+	else
+	    block_ip_v6 $IP
+	    exit 0
+	fi
+	exit 0
+	;;
+	
+    delist)	if [[ $IP_VERSION = 4 ]]
+	then
+	    unblock_ip_v4 $IP
+	else
+	    unblock_ip_v6 $IP
+	fi
+	exit 0
+	;;
+	
+    count)	count
+	;;
+	
+    block)	block="1"
+	;;
+    
+    unblock)	block="0"
+	;;
+	
+    *)	usage
+	exit 1
+esac
