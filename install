@@ -1,5 +1,12 @@
 #!/bin/bash
 
 INSTALLDIR="/usr/bin"
+if [ ! -d /usr/share/blacklist/ ]
+then
+	mkdir /usr/share/blacklist/
+fi
+mkdir /usr/share/blacklist/lang/
+
 cp -v blacklist $INSTALLDIR/blacklist
 cp -v logrotate/blacklist /etc/logrotate.d/blacklist
+cp -v lang/ru /usr/share/blacklist/lang/ru

@@ -1,3 +1,6 @@
 #!/bin/bash
 unlink /usr/bin/blacklist
 unlink /etc/logrotate.d/blacklist
+unlink /usr/share/blacklist/lang/ru
+rmdir /usr/share/blacklist/lang/
+rmdir /usr/share/blacklist/
