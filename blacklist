@@ -323,7 +323,7 @@ while getopts "i:a:dcf:vh" arg; do
 	    exit 0
 	    ;;
 	    
-	v)	echo "IP blocking script; version 0.2"
+	v)	echo "IP blocking script; version 0.21"
 	    exit 0
 	    ;;
 	    
