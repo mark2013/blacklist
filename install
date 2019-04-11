@@ -6,7 +6,21 @@ then
 	mkdir /usr/share/blacklist/
 fi
 mkdir /usr/share/blacklist/lang/
-
 cp -v blacklist $INSTALLDIR/blacklist
 cp -v logrotate/blacklist /etc/logrotate.d/blacklist
 cp -v lang/ru /usr/share/blacklist/lang/ru
+
+IPCALC=`which ipcalc`
+if [ -z "$IPCALC" ]
+then
+	if [[ -f "/etc/debian_version" ||  -f "/etc/debian_release" ]]
+	then
+		apt-get install ipcalc
+	elif [[ -f "/etc/centos-release"  ||  -f "/etc/redhat-release" ]]
+	then
+		yum install ipcalc
+	elif [[ -f "/etc/gentoo-release" ]]
+	then
+		emerge ipcalc
+	fi
+fi
