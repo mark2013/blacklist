@@ -7,6 +7,7 @@ then
 fi
 mkdir /usr/share/blacklist/lang/
 cp -v blacklist $INSTALLDIR/blacklist
+cp -v blacklist-libs $INSTALLDIR/blacklist-libs
 cp -v logrotate/blacklist /etc/logrotate.d/blacklist
 cp -v lang/ru /usr/share/blacklist/lang/ru
 
